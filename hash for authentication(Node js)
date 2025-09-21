@@ -1,0 +1,56 @@
+Install Dependencies
+
+mkdir hash-auth && cd hash-auth
+npm init -y
+npm install express bcrypt
+
+
+Code: server.js
+
+  import express from 'express';
+import bcrypt from 'bcrypt';
+
+const app = express();
+app.use(express.json());
+
+// In-memory user store (for demo only; use a DB in production)
+const users = [];
+
+// Register user: hash password before saving
+app.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10); // 10 = salt rounds
+  users.push({ username, password: hashedPassword });
+  res.json({ message: 'User registered successfully' });
+});
+
+// Login: compare entered password with stored hash
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+
+  res.json({ message: 'Login successful' });
+});
+
+app.listen(3000, () => console.log('Server running on http://localhost:3000'));
+
+
+
+Run & Test
+node server.js
+
+  Register:
+POST http://localhost:3000/register
+Body: { "username": "alice", "password": "mypassword" }
+Login:
+POST http://localhost:3000/login
+Body: { "username": "alice", "passwor{ "message": "Login successful" }
+d": "mypassword" }
+
+If the password is correct
+
+
