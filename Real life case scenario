@@ -1,0 +1,106 @@
+Setup
+mkdir role-based-auth && cd role-based-auth
+npm init -y
+npm install express bcrypt jsonwebtoken dotenv
+
+
+Create .env:
+PORT=3000
+JWT_SECRET=supersecretkey
+
+Code: server.js
+import express from 'express';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const app = express();
+app.use(express.json());
+
+// In-memory data for demo
+const users = [];
+
+// Register with role
+app.post('/register', async (req, res) => {
+  const { username, password, role } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Allowed roles: user, moderator, admin
+  users.push({ username, password: hashedPassword, role: role || 'user' });
+  res.json({ message: 'User registered', username, role: role || 'user' });
+});
+
+// Login to receive JWT
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+
+  const token = jwt.sign(
+    { username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+
+  res.json({ token });
+});
+
+// Middleware to verify token and check roles
+function auth(requiredRoles = []) {
+  return (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ message: 'No token' });
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+      if (err) return res.status(403).json({ message: 'Invalid token' });
+
+      // Check role if restrictions apply
+      if (requiredRoles.length && !requiredRoles.includes(user.role)) {
+        return res.status(403).json({ message: 'Forbidden for your role' });
+      }
+      req.user = user;
+      next();
+    });
+  };
+}
+
+// Routes with different access levels
+app.get('/profile', auth(), (req, res) => {
+  res.json({ message: `Hello ${req.user.username}`, role: req.user.role });
+});
+
+// Moderator-only action: delete post
+app.delete('/posts/:id', auth(['moderator', 'admin']), (req, res) => {
+  res.json({ message: `Post ${req.params.id} deleted by ${req.user.role}` });
+});
+
+// Admin-only action: manage users
+app.get('/admin/users', auth(['admin']), (req, res) => {
+  const list = users.map(u => ({ username: u.username, role: u.role }));
+  res.json({ users: list });
+});
+
+app.listen(process.env.PORT, () =>
+  console.log(`Server running on http://localhost:${process.env.PORT}`)
+);
+
+
+Example Flow
+# 1. Register
+POST /register
+Body: { "username": "alice", "password": "pass123", "role": "moderator" }
+
+# 2. Login
+POST /login
+Body: { "username": "alice", "password": "pass123" }
+# => returns { token: "JWT_TOKEN" }
+
+# 3. Access a moderator-only endpoint
+DELETE /posts/42
+Header: Authorization: Bearer JWT_TOKEN
+
