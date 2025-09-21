@@ -1,0 +1,108 @@
+Install Dependencies
+mkdir jwt-hash-auth && cd jwt-hash-auth
+npm init -y
+npm install express bcrypt jsonwebtoken dotenv
+
+Create a .env File
+PORT=3000
+JWT_SECRET=your_super_secret_key
+
+
+Code: server.js
+import express from 'express';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const app = express();
+app.use(express.json());
+
+// In-memory user store (replace with a database in production)
+const users = [];
+
+/**
+ * Route: POST /register
+ * Action: Hash the password and save the user
+ */
+app.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  users.push({ username, password: hashedPassword });
+  res.json({ message: 'User registered successfully' });
+});
+
+/**
+ * Route: POST /login
+ * Action: Verify password and return JWT
+ */
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+
+  // Create JWT token (expires in 1 hour)
+  const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+  res.json({ message: 'Login successful', token });
+});
+
+/**
+ * Middleware: Verify JWT for protected routes
+ */
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ message: 'No token provided' });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ message: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+}
+
+/**
+ * Route: GET /profile
+ * Action: Protected route accessible only with a valid token
+ */
+app.get('/profile', authenticateToken, (req, res) => {
+  res.json({ message: `Welcome ${req.user.username}!`, user: req.user });
+});
+
+app.listen(process.env.PORT, () =>
+  console.log(`Server running on http://localhost:${process.env.PORT}`)
+);
+
+
+Run & Test
+node server.js
+
+Register User
+POST http://localhost:3000/register
+Body: { "username": "alice", "password": "mypassword" }
+
+
+Login to Get Token
+POST http://localhost:3000/login
+Body: { "username": "alice", "password": "mypassword" }
+
+
+Body: { "username": "alice", "password": "mypassword" }
+Response will include:
+
+Response will include:
+{ "message": "Login successful", "token": "<JWT_TOKEN>" }
+
+Access Protected Route
+GET http://localhost:3000/profile
+Header: Authorization: Bearer <JWT_TOKEN>
+
+
